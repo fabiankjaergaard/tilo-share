@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delat Kvitto - Tilo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; padding: 20px;
+        }
+        .container {
+            max-width: 600px; margin: 0 auto; background: white;
+            border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #FF6B35, #F7931E);
+            color: white; padding: 30px; text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .content { padding: 30px; }
+        .loading { text-align: center; padding: 50px; }
+        .error { color: #dc3545; text-align: center; padding: 20px; background: #f8d7da; border-radius: 8px; margin: 20px 0; }
+        .participant-selector { margin-bottom: 30px; }
+        .participant-chips {
+            display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;
+        }
+        .participant-chip {
+            padding: 10px 20px; background: #f0f0f0;
+            border: 2px solid transparent; border-radius: 25px;
+            cursor: pointer; transition: all 0.3s ease; font-weight: 500;
+        }
+        .participant-chip:hover { background: #e0e0e0; }
+        .participant-chip.selected {
+            background: #FF6B35; color: white; border-color: #FF6B35;
+        }
+        .receipt-items { margin-top: 20px; }
+        .receipt-item {
+            display: flex; justify-content: space-between;
+            align-items: center; padding: 15px; margin-bottom: 10px;
+            background: #f8f9fa; border-radius: 12px; cursor: pointer;
+            transition: all 0.3s ease; border: 2px solid transparent;
+        }
+        .receipt-item:hover { background: #e9ecef; }
+        .receipt-item.selected {
+            background: #d4edda; border-color: #28a745;
+        }
+        .receipt-item.taken {
+            background: #f8d7da; border-color: #dc3545;
+            opacity: 0.7; cursor: not-allowed;
+        }
+        .item-info { flex: 1; }
+        .item-name { font-weight: 600; margin-bottom: 5px; }
+        .item-selected-by { font-size: 12px; color: #666; }
+        .item-price { font-weight: bold; color: #FF6B35; }
+        .summary {
+            margin-top: 30px; padding: 20px;
+            background: #f8f9fa; border-radius: 12px;
+        }
+        .save-btn {
+            width: 100%; padding: 15px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white; border: none; border-radius: 12px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            margin-top: 20px; transition: transform 0.2s ease;
+        }
+        .save-btn:hover { transform: translateY(-2px); }
+        .save-btn:disabled {
+            background: #ccc; cursor: not-allowed; transform: none;
+        }
+        .debug { 
+            background: #f8f9fa; padding: 15px; margin: 20px 0; 
+            border-radius: 8px; font-family: monospace; font-size: 12px;
+            white-space: pre-wrap; max-height: 200px; overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧾 Delat Kvitto</h1>
+            <p>Välj dina produkter nedan</p>
+        </div>
+        <div class="content">
+            <div id="loading" class="loading">
+                <p>Laddar kvitto...</p>
+            </div>
+            <div id="error" class="error" style="display: none;"></div>
+            <div id="debug" class="debug" style="display: none;"></div>
+            <div id="main-content" style="display: none;">
+                <div class="participant-selector">
+                    <h3>Vem är du?</h3>
+                    <div class="participant-chips" id="participants"></div>
+                </div>
+                <div class="receipt-items" id="receipt-lines"></div>
+                <div class="summary" id="summary" style="display: none;">
+                    <h4>Din summa: <span id="total-amount">0 kr</span></h4>
+                    <button class="save-btn" id="save-btn" onclick="saveSelections()">Spara mina val</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Hämta shareId från URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const shareId = urlParams.get('id');
+        
+        const supabaseUrl = 'https://mykbbmbejcgefjitzbru.supabase.co';
+        const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im15a2JibWJlamNnZWZqaXR6YnJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAwODc2NTAsImV4cCI6MjA2NTY2MzY1MH0.kVyxmZt846hN1evZ42SXc2y8w18NuPYQyx4uYdubSkw';
+        
+        let receiptData = null;
+        let participants = [];
+        let selectedParticipant = null;
+        let selectedItems = new Set();
+        
+        function showDebug(message) {
+            const debugEl = document.getElementById('debug');
+            debugEl.style.display = 'block';
+            debugEl.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+        }
+        
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = message;
+        }
+        
+        async function loadReceipt() {
+            if (!shareId) {
+                showError('Ingen share ID hittades i URL:en');
+                return;
+            }
+            
+            showDebug(`Försöker ladda kvitto med shareId: ${shareId}`);
+            
+            try {
+                const url = `${supabaseUrl}/rest/v1/shared_receipts?share_id=eq.${shareId}&select=*`;
+                showDebug(`Anropar URL: ${url}`);
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey,
+                        'Content-Type': 'application/json'
+                    },
+                });
+                
+                showDebug(`Response status: ${response.status}`);
+                
+                const responseText = await response.text();
+                showDebug(`Response text: ${responseText}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${responseText}`);
+                }
+                
+                const receipts = JSON.parse(responseText);
+                showDebug(`Parsed receipts: ${JSON.stringify(receipts, null, 2)}`);
+                
+                if (receipts.length === 0) {
+                    throw new Error('Kvitto hittades inte');
+                }
+                
+                const receipt = receipts[0];
+                receiptData = receipt.receipt_data;
+                participants = receipt.participants;
+                
+                showDebug(`Receipt data loaded successfully`);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                
+                renderParticipants();
+                renderReceiptLines();
+                
+            } catch (error) {
+                console.error('Error loading receipt:', error);
+                showDebug(`Error: ${error.message}`);
+                showError('Fel vid laddning av kvitto: ' + error.message);
+            }
+        }
+        
+        function renderParticipants() {
+            const container = document.getElementById('participants');
+            participants.forEach(participant => {
+                const chip = document.createElement('div');
+                chip.className = 'participant-chip';
+                chip.textContent = participant.name;
+                chip.onclick = () => selectParticipant(participant);
+                container.appendChild(chip);
+            });
+        }
+        
+        function selectParticipant(participant) {
+            selectedParticipant = participant;
+            document.querySelectorAll('.participant-chip').forEach(chip => {
+                chip.classList.remove('selected');
+            });
+            event.target.classList.add('selected');
+            
+            // Visa kvittorader när deltagare är vald
+            renderReceiptLines();
+            updateSummary();
+        }
+        
+        function renderReceiptLines() {
+            if (!receiptData || !receiptData.lines) return;
+            
+            const container = document.getElementById('receipt-lines');
+            container.innerHTML = '';
+            
+            receiptData.lines.forEach((line, index) => {
+                const item = document.createElement('div');
+                item.className = 'receipt-item';
+                
+                // Kolla om någon annan har valt denna rad
+                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.id;
+                const isSelectedByMe = selectedItems.has(index);
+                
+                if (isSelectedByOther) {
+                    item.classList.add('taken');
+                } else if (isSelectedByMe) {
+                    item.classList.add('selected');
+                }
+                
+                item.innerHTML = `
+                    <div class="item-info">
+                        <div class="item-name">${line.description}</div>
+                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.id === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
+                    </div>
+                    <div class="item-price">${line.amount} kr</div>
+                `;
+                
+                if (!isSelectedByOther && selectedParticipant) {
+                    item.onclick = () => toggleItem(index);
+                }
+                
+                container.appendChild(item);
+            });
+        }
+        
+        function toggleItem(index) {
+            if (selectedItems.has(index)) {
+                selectedItems.delete(index);
+            } else {
+                selectedItems.add(index);
+            }
+            renderReceiptLines();
+            updateSummary();
+        }
+        
+        function updateSummary() {
+            if (!selectedParticipant) {
+                document.getElementById('summary').style.display = 'none';
+                return;
+            }
+            
+            let total = 0;
+            selectedItems.forEach(index => {
+                total += receiptData.lines[index].amount;
+            });
+            
+            document.getElementById('total-amount').textContent = `${total} kr`;
+            document.getElementById('summary').style.display = 'block';
+            
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = selectedItems.size === 0;
+        }
+        
+        async function saveSelections() {
+            if (!selectedParticipant || selectedItems.size === 0) return;
+            
+            try {
+                showDebug('Sparar val...');
+                
+                // Uppdatera receiptData med nya val
+                const updatedLines = receiptData.lines.map((line, index) => {
+                    if (selectedItems.has(index)) {
+                        return { ...line, selectedBy: selectedParticipant.id };
+                    }
+                    return line;
+                });
+                
+                const updatedReceiptData = {
+                    ...receiptData,
+                    lines: updatedLines
+                };
+                
+                // Skicka uppdatering till Supabase
+                const response = await fetch(`${supabaseUrl}/rest/v1/shared_receipts?share_id=eq.${shareId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        receipt_data: updatedReceiptData
+                    })
+                });
+                
+                if (response.ok) {
+                    showDebug('Val sparade!');
+                    alert('Dina val har sparats!');
+                    // Ladda om data för att visa uppdateringar
+                    location.reload();
+                } else {
+                    throw new Error('Kunde inte spara val');
+                }
+                
+            } catch (error) {
+                showDebug(`Fel vid sparande: ${error.message}`);
+                alert('Fel vid sparande av val');
+            }
+        }
+        
+        // Ladda kvitto när sidan laddas
+        window.onload = loadReceipt;
+    </script>
+</body>
+</html> 
