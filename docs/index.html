@@ -233,7 +233,7 @@
                 item.className = 'receipt-item';
                 
                 // Kolla om någon annan har valt denna rad
-                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.id;
+                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.contactId;
                 const isSelectedByMe = selectedItems.has(index);
                 
                 if (isSelectedByOther) {
@@ -245,7 +245,7 @@
                 item.innerHTML = `
                     <div class="item-info">
                         <div class="item-name">${line.text}</div>
-                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.id === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
+                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.contactId === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
                     </div>
                     <div class="item-price">${line.price} kr</div>
                 `;
@@ -325,7 +325,7 @@
                 // Uppdatera receiptData med nya val
                 const updatedLines = receiptData.receipt.lines.map((line, index) => {
                     if (selectedItems.has(index)) {
-                        return { ...line, selectedBy: selectedParticipant.id };
+                        return { ...line, selectedBy: selectedParticipant.contactId };
                     }
                     return line;
                 });

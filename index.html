@@ -217,7 +217,7 @@
                 item.className = 'receipt-item';
                 
                 // Kolla om någon annan har valt denna rad
-                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.id;
+                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.contactId;
                 const isSelectedByMe = selectedItems.has(index);
                 
                 if (isSelectedByOther) {
@@ -228,10 +228,10 @@
                 
                 item.innerHTML = `
                     <div class="item-info">
-                        <div class="item-name">${line.description}</div>
-                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.id === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
+                        <div class="item-name">${line.text}</div>
+                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.contactId === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
                     </div>
-                    <div class="item-price">${line.amount} kr</div>
+                    <div class="item-price">${line.price} kr</div>
                 `;
                 
                 if (!isSelectedByOther && selectedParticipant) {
@@ -260,7 +260,7 @@
             
             let total = 0;
             selectedItems.forEach(index => {
-                total += receiptData.lines[index].amount;
+                total += receiptData.lines[index].price;
             });
             
             document.getElementById('total-amount').textContent = `${total} kr`;
@@ -279,7 +279,7 @@
                 // Uppdatera receiptData med nya val
                 const updatedLines = receiptData.lines.map((line, index) => {
                     if (selectedItems.has(index)) {
-                        return { ...line, selectedBy: selectedParticipant.id };
+                        return { ...line, selectedBy: selectedParticipant.contactId };
                     }
                     return line;
                 });
