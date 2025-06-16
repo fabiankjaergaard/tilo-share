@@ -60,17 +60,29 @@
             margin-top: 30px; padding: 20px;
             background: #f8f9fa; border-radius: 12px;
         }
-        .save-btn {
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .save-btn, .swish-btn {
             width: 100%; padding: 15px;
-            background: linear-gradient(135deg, #28a745, #20c997);
             color: white; border: none; border-radius: 12px;
             font-size: 16px; font-weight: 600; cursor: pointer;
-            margin-top: 20px; transition: transform 0.2s ease;
+            transition: transform 0.2s ease;
+        }
+        .save-btn {
+            background: linear-gradient(135deg, #28a745, #20c997);
         }
         .save-btn:hover { transform: translateY(-2px); }
         .save-btn:disabled {
             background: #ccc; cursor: not-allowed; transform: none;
         }
+        .swish-btn {
+            background: linear-gradient(135deg, #1DB584, #17a374);
+        }
+        .swish-btn:hover { transform: translateY(-2px); }
         .debug { 
             background: #f8f9fa; padding: 15px; margin: 20px 0; 
             border-radius: 8px; font-family: monospace; font-size: 12px;
@@ -98,7 +110,12 @@
                 <div class="receipt-items" id="receipt-lines"></div>
                 <div class="summary" id="summary" style="display: none;">
                     <h4>Din summa: <span id="total-amount">0 kr</span></h4>
-                    <button class="save-btn" id="save-btn" onclick="saveSelections()">Spara mina val</button>
+                    <div class="action-buttons">
+                        <button class="save-btn" id="save-btn" onclick="saveSelections()">Spara mina val</button>
+                        <button class="swish-btn" id="swish-btn" onclick="openSwish()" style="display: none;">
+                            📱 Öppna Swish
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -266,7 +283,41 @@
             document.getElementById('summary').style.display = 'block';
             
             const saveBtn = document.getElementById('save-btn');
+            const swishBtn = document.getElementById('swish-btn');
+            
             saveBtn.disabled = selectedItems.size === 0;
+            
+            // Visa Swish-knappen om användaren har valt produkter och inte är betalaren
+            if (selectedItems.size > 0 && !selectedParticipant.isPayer) {
+                swishBtn.style.display = 'block';
+            } else {
+                swishBtn.style.display = 'none';
+            }
+        }
+        
+        function openSwish() {
+            if (!selectedParticipant || selectedItems.size === 0) return;
+            
+            // Beräkna totalsumma
+            let total = 0;
+            selectedItems.forEach(index => {
+                total += receiptData.receipt.lines[index].price;
+            });
+            
+            // Hitta betalaren (den som har isPayer: true)
+            const payer = participants.find(p => p.isPayer);
+            if (!payer) {
+                alert('Kunde inte hitta betalaren');
+                return;
+            }
+            
+            // Skapa Swish-länk
+            const swishUrl = `swish://payment?phone=${payer.phoneNumber.replace(/[^0-9]/g, '')}&amount=${total}&message=Kvitto%20${shareId.substring(0, 8)}`;
+            
+            showDebug(`Öppnar Swish med URL: ${swishUrl}`);
+            
+            // Försök öppna Swish-appen
+            window.location.href = swishUrl;
         }
         
         async function saveSelections() {
