@@ -149,7 +149,6 @@
                 });
                 
                 showDebug(`Response status: ${response.status}`);
-                showDebug(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
                 
                 const responseText = await response.text();
                 showDebug(`Response text: ${responseText}`);
@@ -195,45 +194,47 @@
             });
         }
         
+        function selectParticipant(participant) {
+            selectedParticipant = participant;
+            document.querySelectorAll('.participant-chip').forEach(chip => {
+                chip.classList.remove('selected');
+            });
+            event.target.classList.add('selected');
+            
+            // Visa kvittorader när deltagare är vald
+            renderReceiptLines();
+            updateSummary();
+        }
+        
         function renderReceiptLines() {
+            if (!receiptData || !receiptData.lines) return;
+            
             const container = document.getElementById('receipt-lines');
             container.innerHTML = '';
             
-            receiptData.receipt.lines.forEach((line, index) => {
+            receiptData.lines.forEach((line, index) => {
                 const item = document.createElement('div');
                 item.className = 'receipt-item';
                 
-                if (line.selectedBy && line.selectedBy !== selectedParticipant?.contactId) {
+                // Kolla om någon annan har valt denna rad
+                const isSelectedByOther = line.selectedBy && line.selectedBy !== selectedParticipant?.id;
+                const isSelectedByMe = selectedItems.has(index);
+                
+                if (isSelectedByOther) {
                     item.classList.add('taken');
-                } else if (selectedItems.has(index)) {
+                } else if (isSelectedByMe) {
                     item.classList.add('selected');
                 }
                 
-                const selectedByParticipant = participants.find(p => p.contactId === line.selectedBy);
+                item.innerHTML = `
+                    <div class="item-info">
+                        <div class="item-name">${line.description}</div>
+                        ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.id === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
+                    </div>
+                    <div class="item-price">${line.amount} kr</div>
+                `;
                 
-                const itemInfo = document.createElement('div');
-                itemInfo.className = 'item-info';
-                
-                const itemName = document.createElement('div');
-                itemName.className = 'item-name';
-                itemName.textContent = line.text;
-                itemInfo.appendChild(itemName);
-                
-                if (line.selectedBy) {
-                    const selectedBy = document.createElement('div');
-                    selectedBy.className = 'item-selected-by';
-                    selectedBy.textContent = 'Vald av: ' + (selectedByParticipant?.name || 'Okänd');
-                    itemInfo.appendChild(selectedBy);
-                }
-                
-                const itemPrice = document.createElement('div');
-                itemPrice.className = 'item-price';
-                itemPrice.textContent = line.price.toFixed(2) + ' kr';
-                
-                item.appendChild(itemInfo);
-                item.appendChild(itemPrice);
-                
-                if (!line.selectedBy || line.selectedBy === selectedParticipant?.contactId) {
+                if (!isSelectedByOther && selectedParticipant) {
                     item.onclick = () => toggleItem(index);
                 }
                 
@@ -241,43 +242,12 @@
             });
         }
         
-        function selectParticipant(participant) {
-            selectedParticipant = participant;
-            
-            document.querySelectorAll('.participant-chip').forEach(chip => {
-                chip.classList.remove('selected');
-            });
-            event.target.classList.add('selected');
-            
-            selectedItems.clear();
-            
-            receiptData.receipt.lines.forEach((line, index) => {
-                if (line.selectedBy === participant.contactId) {
-                    selectedItems.add(index);
-                }
-            });
-            
-            renderReceiptLines();
-            updateSummary();
-        }
-        
         function toggleItem(index) {
-            if (!selectedParticipant) {
-                alert('Välj först vem du är!');
-                return;
-            }
-            
-            const line = receiptData.receipt.lines[index];
-            if (line.selectedBy && line.selectedBy !== selectedParticipant.contactId) {
-                return;
-            }
-            
             if (selectedItems.has(index)) {
                 selectedItems.delete(index);
             } else {
                 selectedItems.add(index);
             }
-            
             renderReceiptLines();
             updateSummary();
         }
@@ -290,59 +260,65 @@
             
             let total = 0;
             selectedItems.forEach(index => {
-                total += receiptData.receipt.lines[index].price;
+                total += receiptData.lines[index].amount;
             });
             
-            document.getElementById('total-amount').textContent = total.toFixed(2) + ' kr';
+            document.getElementById('total-amount').textContent = `${total} kr`;
             document.getElementById('summary').style.display = 'block';
-            document.getElementById('save-btn').disabled = selectedItems.size === 0;
+            
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = selectedItems.size === 0;
         }
         
         async function saveSelections() {
             if (!selectedParticipant || selectedItems.size === 0) return;
             
-            selectedItems.forEach(index => {
-                receiptData.receipt.lines[index].selectedBy = selectedParticipant.contactId;
-            });
-            
             try {
                 showDebug('Sparar val...');
                 
-                const response = await fetch(
-                    `${supabaseUrl}/rest/v1/shared_receipts?share_id=eq.${shareId}`,
-                    {
-                        method: 'PATCH',
-                        headers: {
-                            'Authorization': `Bearer ${anonKey}`,
-                            'apikey': anonKey,
-                            'Content-Type': 'application/json',
-                            'Prefer': 'return=minimal'
-                        },
-                        body: JSON.stringify({
-                            receipt_data: receiptData,
-                            updated_at: new Date().toISOString()
-                        })
+                // Uppdatera receiptData med nya val
+                const updatedLines = receiptData.lines.map((line, index) => {
+                    if (selectedItems.has(index)) {
+                        return { ...line, selectedBy: selectedParticipant.id };
                     }
-                );
+                    return line;
+                });
                 
-                showDebug(`Save response status: ${response.status}`);
+                const updatedReceiptData = {
+                    ...receiptData,
+                    lines: updatedLines
+                };
+                
+                // Skicka uppdatering till Supabase
+                const response = await fetch(`${supabaseUrl}/rest/v1/shared_receipts?share_id=eq.${shareId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${anonKey}`,
+                        'apikey': anonKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        receipt_data: updatedReceiptData
+                    })
+                });
                 
                 if (response.ok) {
-                    alert('Dina val har sparats! ✅');
+                    showDebug('Val sparade!');
+                    alert('Dina val har sparats!');
+                    // Ladda om data för att visa uppdateringar
                     location.reload();
                 } else {
-                    const errorText = await response.text();
-                    showDebug(`Save error: ${errorText}`);
-                    alert('Något gick fel vid sparandet: ' + errorText);
+                    throw new Error('Kunde inte spara val');
                 }
+                
             } catch (error) {
-                showDebug(`Save exception: ${error.message}`);
-                alert('Något gick fel vid sparandet: ' + error.message);
+                showDebug(`Fel vid sparande: ${error.message}`);
+                alert('Fel vid sparande av val');
             }
         }
         
-        // Ladda kvittot när sidan laddas
-        loadReceipt();
+        // Ladda kvitto när sidan laddas
+        window.onload = loadReceipt;
     </script>
 </body>
 </html> 
