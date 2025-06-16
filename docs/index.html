@@ -287,12 +287,8 @@
             
             saveBtn.disabled = selectedItems.size === 0;
             
-            // Visa Swish-knappen om användaren har valt produkter och inte är betalaren
-            if (selectedItems.size > 0 && !selectedParticipant.isPayer) {
-                swishBtn.style.display = 'block';
-            } else {
-                swishBtn.style.display = 'none';
-            }
+            // Swish-knappen visas bara efter att man sparat sina val
+            swishBtn.style.display = 'none';
         }
         
         function openSwish() {
@@ -358,8 +354,19 @@
                 if (response.ok) {
                     showDebug('Val sparade!');
                     alert('Dina val har sparats!');
-                    // Ladda om data för att visa uppdateringar
-                    location.reload();
+                    
+                    // Visa Swish-knappen om användaren inte är betalaren
+                    const swishBtn = document.getElementById('swish-btn');
+                    const saveBtn = document.getElementById('save-btn');
+                    
+                    if (!selectedParticipant.isPayer) {
+                        swishBtn.style.display = 'block';
+                        saveBtn.textContent = 'Val sparade ✓';
+                        saveBtn.disabled = true;
+                    } else {
+                        // Ladda om data för att visa uppdateringar för betalaren
+                        location.reload();
+                    }
                 } else {
                     throw new Error('Kunde inte spara val');
                 }
