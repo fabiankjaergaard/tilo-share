@@ -117,9 +117,8 @@
         let selectedItems = new Set();
         
         function showDebug(message) {
-            const debugEl = document.getElementById('debug');
-            debugEl.style.display = 'block';
-            debugEl.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+            // Debug-meddelanden döljs i produktion
+            console.log(new Date().toLocaleTimeString() + ': ' + message);
         }
         
         function showError(message) {
@@ -207,12 +206,12 @@
         }
         
         function renderReceiptLines() {
-            if (!receiptData || !receiptData.lines) return;
+            if (!receiptData || !receiptData.receipt || !receiptData.receipt.lines) return;
             
             const container = document.getElementById('receipt-lines');
             container.innerHTML = '';
             
-            receiptData.lines.forEach((line, index) => {
+            receiptData.receipt.lines.forEach((line, index) => {
                 const item = document.createElement('div');
                 item.className = 'receipt-item';
                 
@@ -228,10 +227,10 @@
                 
                 item.innerHTML = `
                     <div class="item-info">
-                        <div class="item-name">${line.description}</div>
+                        <div class="item-name">${line.text}</div>
                         ${line.selectedBy ? `<div class="item-selected-by">Vald av: ${participants.find(p => p.id === line.selectedBy)?.name || 'Okänd'}</div>` : ''}
                     </div>
-                    <div class="item-price">${line.amount} kr</div>
+                    <div class="item-price">${line.price} kr</div>
                 `;
                 
                 if (!isSelectedByOther && selectedParticipant) {
@@ -260,7 +259,7 @@
             
             let total = 0;
             selectedItems.forEach(index => {
-                total += receiptData.lines[index].amount;
+                total += receiptData.receipt.lines[index].price;
             });
             
             document.getElementById('total-amount').textContent = `${total} kr`;
@@ -277,7 +276,7 @@
                 showDebug('Sparar val...');
                 
                 // Uppdatera receiptData med nya val
-                const updatedLines = receiptData.lines.map((line, index) => {
+                const updatedLines = receiptData.receipt.lines.map((line, index) => {
                     if (selectedItems.has(index)) {
                         return { ...line, selectedBy: selectedParticipant.id };
                     }
@@ -286,7 +285,10 @@
                 
                 const updatedReceiptData = {
                     ...receiptData,
-                    lines: updatedLines
+                    receipt: {
+                        ...receiptData.receipt,
+                        lines: updatedLines
+                    }
                 };
                 
                 // Skicka uppdatering till Supabase
